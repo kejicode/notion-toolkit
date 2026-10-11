@@ -167,6 +167,7 @@ create_runner_script() {
     cat > "$INSTALL_DIR/runner.sh" << 'KALIVE'
 #!/bin/bash
 set -euo pipefail
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/config.env"
 LOG_DIR="$SCRIPT_DIR/logs"
