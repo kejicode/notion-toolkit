@@ -1,8 +1,7 @@
 #!/bin/bash
 # ============================================================================
 #  Notion Toolkit - Development Environment Setup
-#  Usage: curl -fsSL <raw-url> | bash
-#         or: git clone <repo> && cd <repo> && bash setup.sh
+#  Usage: bash <(curl -fsSL https://raw.githubusercontent.com/kejicode/notion-toolkit/main/setup.sh)
 # ============================================================================
 set -euo pipefail
 
