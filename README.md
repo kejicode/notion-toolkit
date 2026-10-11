@@ -5,7 +5,7 @@ One-script automated keepalive for Claude Code on VPS. Interactive setup, zero c
 ## Quick Start
 
 ```bash
-git clone https://github.com/kejicode/claude-keepalive.git
+git clone https://github.com/kejicode/notion-toolkit.git
 cd claude-keepalive
 bash setup.sh
 ```
@@ -13,7 +13,7 @@ bash setup.sh
 Or run directly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kejicode/claude-keepalive/main/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kejicode/notion-toolkit/main/setup.sh | bash
 ```
 
 ## What It Does
@@ -95,7 +95,7 @@ One VPS = one account. Clone the repo to each VPS and run `setup.sh`:
 ```bash
 # From your local machine
 for host in vps1 vps2 vps3; do
-    ssh $host "git clone https://github.com/kejicode/claude-keepalive.git && cd claude-keepalive && bash setup.sh"
+    ssh $host "git clone https://github.com/kejicode/notion-toolkit.git && cd claude-keepalive && bash setup.sh"
 done
 ```
 
