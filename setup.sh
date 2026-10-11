@@ -30,19 +30,50 @@ ART
     echo ""
 }
 
-preflight() {
-    info "Checking environment..."
+install_deps() {
+    info "Checking dependencies..."
+
+    # nodejs + npm
+    if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+        warn "Node.js / npm not found, installing..."
+        if command -v apt &>/dev/null; then
+            sudo apt update -qq && sudo apt install -y nodejs npm
+        else
+            error "Unsupported package manager. Please install nodejs and npm manually."
+        fi
+        success "Node.js $(node -v) / npm $(npm -v) installed"
+    else
+        success "Node.js $(node -v) / npm $(npm -v) found"
+    fi
+
+    # claude code CLI
     if ! command -v claude &>/dev/null; then
-        warn "CLI tool not found in PATH"
-        echo -e "  Install: ${DIM}npm install -g @anthropic-ai/claude-code${NC}"
-        read -rp "  Continue anyway? [y/N] " yn
-        [[ "$yn" =~ ^[Yy]$ ]] || exit 0
+        warn "CLI not found, installing..."
+        sudo npm install -g @anthropic-ai/claude-code
+        if command -v claude &>/dev/null; then
+            success "CLI installed: $(which claude)"
+        else
+            error "CLI installation failed"
+        fi
     else
         success "CLI found: $(which claude)"
     fi
-    command -v git &>/dev/null || error "git is required but not installed"
-    command -v crontab &>/dev/null || error "crontab is required but not installed"
-    success "Environment checks passed"
+
+    # git
+    if ! command -v git &>/dev/null; then
+        warn "git not found, installing..."
+        sudo apt install -y git
+    fi
+    success "git found"
+
+    # crontab
+    if ! command -v crontab &>/dev/null; then
+        warn "cron not found, installing..."
+        sudo apt install -y cron
+        sudo systemctl enable cron && sudo systemctl start cron
+    fi
+    success "cron found"
+
     echo ""
 }
 
@@ -901,7 +932,7 @@ main() {
         --help|-h)      echo "Usage: $0 [--update-token|--status|--uninstall|--help]"; exit 0 ;;
     esac
     banner
-    preflight
+    install_deps
     collect_input
     create_structure
     install_cron
