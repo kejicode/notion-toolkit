@@ -94,16 +94,24 @@ collect_input() {
 create_prompts() {
     local dir="$1"
     mkdir -p "$dir"
-    echo "Review the project structure and suggest improvements to code organization." > "$dir/01.txt"
-    echo "Check for potential performance issues or bottlenecks in the codebase." > "$dir/02.txt"
-    echo "Summarize recent changes and list any remaining TODO items in the code." > "$dir/03.txt"
-    echo "Analyze test coverage and suggest areas that need more testing." > "$dir/04.txt"
-    echo "Review error handling patterns and suggest improvements for robustness." > "$dir/05.txt"
-    echo "Look for any hardcoded values that should be moved to configuration." > "$dir/06.txt"
-    echo "Check for code duplication and suggest refactoring opportunities." > "$dir/07.txt"
-    echo "Review the README and documentation for accuracy and completeness." > "$dir/08.txt"
-    echo "Analyze dependencies and check if any are outdated or have known issues." > "$dir/09.txt"
-    echo "Suggest improvements to the project's logging and monitoring setup." > "$dir/10.txt"
+    echo "Add proper retry logic with exponential backoff to the NotionClient API calls in client.py. Currently failures just raise immediately." > "$dir/01.txt"
+    echo "Implement the CSV export feature in exporter.py - the export_csv method is still a stub. It should handle all Notion property types properly." > "$dir/02.txt"
+    echo "Add input validation to the CLI commands in cli.py. Right now there's no validation on database IDs or page IDs before making API calls." > "$dir/03.txt"
+    echo "Write unit tests for the NotionClient class in client.py. Focus on testing error handling, pagination, and the query builder." > "$dir/04.txt"
+    echo "Refactor the property type handling in exporter.py - the _format_property method has too many if/elif branches. Consider using a dispatch dict or strategy pattern." > "$dir/05.txt"
+    echo "Add a markdown export feature to exporter.py. It should convert Notion page content blocks into clean markdown with proper heading levels, lists, and code blocks." > "$dir/06.txt"
+    echo "Review the config.py module and add support for multiple workspace configurations. Currently it only handles a single API key." > "$dir/07.txt"
+    echo "Add proper logging throughout the project. Most modules use print statements instead of the logging module. Add appropriate log levels." > "$dir/08.txt"
+    echo "Implement the search command in cli.py - it currently just prints 'not implemented'. It should search across pages and databases by title." > "$dir/09.txt"
+    echo "Add rate limiting to the NotionClient to respect Notion's API rate limits (3 requests per second). The current implementation has no throttling." > "$dir/10.txt"
+    echo "Fix the pagination bug in client.py query_database - when has_more is true it doesn't pass the start_cursor correctly to the next request." > "$dir/11.txt"
+    echo "Add type hints to all functions in utils.py and exporter.py. Several functions are missing return type annotations." > "$dir/12.txt"
+    echo "Implement a cache layer for frequently accessed pages. Add a simple TTL-based cache in client.py to avoid redundant API calls." > "$dir/13.txt"
+    echo "Add a 'sync' command to cli.py that watches a Notion database and automatically exports changes to local files on an interval." > "$dir/14.txt"
+    echo "Write integration tests that verify the full export pipeline: query database -> format properties -> write CSV/JSON output files." > "$dir/15.txt"
+    echo "Review and improve error messages throughout the project. Many exceptions just say 'API error' without including the status code or Notion's error message." > "$dir/16.txt"
+    echo "Add a --filter flag to the export CLI command so users can filter database rows by property values before exporting." > "$dir/17.txt"
+    echo "Refactor config.py to use pydantic for settings validation instead of raw dict access. Add proper defaults and type checking." > "$dir/18.txt"
 }
 
 create_keepalive_script() {
@@ -125,7 +133,7 @@ log "Jitter: ${JITTER}s"
 sleep "$JITTER"
 export CLAUDE_CODE_OAUTH_TOKEN
 cd "$PROJECT_DIR"
-if timeout "$TASK_TIMEOUT" claude -p "$PROMPT_CONTENT" >> "$LOG_FILE" 2>&1; then
+if timeout "$TASK_TIMEOUT" claude -p "$PROMPT_CONTENT" --model "$CLAUDE_MODEL" --effort "$CLAUDE_EFFORT" >> "$LOG_FILE" 2>&1; then
     log "Completed successfully"
 else
     EC=$?
@@ -144,117 +152,636 @@ KALIVE
 create_project_scaffold() {
     local proj_dir="$INSTALL_DIR/project"
     if [ -d "$proj_dir/.git" ]; then return; fi
-    mkdir -p "$proj_dir"
+    mkdir -p "$proj_dir/notion_toolkit" "$proj_dir/tests"
     cd "$proj_dir"
     git init -q
 
-    cat > main.py << 'PYEOF'
-"""Data processing utilities for batch operations."""
+    # --- notion_toolkit/__init__.py ---
+    cat > notion_toolkit/__init__.py << 'PYEOF'
+"""Notion Toolkit - CLI tools for Notion API."""
+__version__ = "0.3.1"
+PYEOF
+
+    # --- notion_toolkit/client.py ---
+    cat > notion_toolkit/client.py << 'PYEOF'
+"""Notion API client wrapper."""
+import requests
+import time
+from typing import Any, Optional
+
+
+NOTION_API_BASE = "https://api.notion.com/v1"
+NOTION_VERSION = "2022-06-28"
+
+
+class NotionClient:
+    """Wrapper around the Notion API with pagination support."""
+
+    def __init__(self, api_key: str, timeout: int = 30):
+        self.api_key = api_key
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update({
+            "Authorization": f"Bearer {api_key}",
+            "Notion-Version": NOTION_VERSION,
+            "Content-Type": "application/json",
+        })
+        self._request_count = 0
+
+    def _request(self, method: str, endpoint: str, **kwargs) -> dict:
+        """Make an API request. TODO: add retry logic with backoff."""
+        url = f"{NOTION_API_BASE}/{endpoint}"
+        self._request_count += 1
+        resp = self.session.request(method, url, timeout=self.timeout, **kwargs)
+        if resp.status_code == 429:
+            # Rate limited - just raise for now
+            # TODO: implement proper rate limiting
+            raise Exception("API error: rate limited")
+        if not resp.ok:
+            raise Exception(f"API error: {resp.status_code}")
+        return resp.json()
+
+    def get_page(self, page_id: str) -> dict:
+        """Retrieve a page by ID."""
+        return self._request("GET", f"pages/{page_id}")
+
+    def get_page_content(self, page_id: str) -> list[dict]:
+        """Get all blocks (content) of a page."""
+        blocks = []
+        has_more = True
+        cursor = None
+        while has_more:
+            params = {"page_size": 100}
+            if cursor:
+                params["start_cursor"] = cursor
+            data = self._request("GET", f"blocks/{page_id}/children", params=params)
+            blocks.extend(data.get("results", []))
+            has_more = data.get("has_more", False)
+            cursor = data.get("next_cursor")
+        return blocks
+
+    def query_database(self, database_id: str, filter_obj: Optional[dict] = None,
+                       sorts: Optional[list] = None, page_size: int = 100) -> list[dict]:
+        """Query a database with optional filters and sorting."""
+        all_results = []
+        has_more = True
+        start_cursor = None
+        while has_more:
+            body: dict[str, Any] = {"page_size": page_size}
+            if filter_obj:
+                body["filter"] = filter_obj
+            if sorts:
+                body["sorts"] = sorts
+            if start_cursor:
+                body["start_cursor"] = start_cursor
+            data = self._request("POST", f"databases/{database_id}/query", json=body)
+            all_results.extend(data.get("results", []))
+            has_more = data.get("has_more", False)
+            # BUG: should use data.get("next_cursor") but sometimes doesn't update
+            start_cursor = data.get("next_cursor")
+        return all_results
+
+    def search(self, query: str, filter_type: Optional[str] = None) -> list[dict]:
+        """Search across all pages and databases.
+        filter_type can be 'page' or 'database'.
+        """
+        body: dict[str, Any] = {"query": query}
+        if filter_type:
+            body["filter"] = {"value": filter_type, "property": "object"}
+        data = self._request("POST", "search", json=body)
+        return data.get("results", [])
+
+    def get_database(self, database_id: str) -> dict:
+        """Retrieve database metadata including schema."""
+        return self._request("GET", f"databases/{database_id}")
+PYEOF
+
+    # --- notion_toolkit/exporter.py ---
+    cat > notion_toolkit/exporter.py << 'PYEOF'
+"""Export Notion data to various formats."""
+import csv
 import json
-import logging
 from pathlib import Path
 from typing import Any
 from datetime import datetime
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
+class NotionExporter:
+    """Export Notion database contents to files."""
 
-class BatchProcessor:
-    """Handles batch data transformation and validation."""
+    def __init__(self, output_dir: str = "output"):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def __init__(self, config_path: str = "config.json"):
-        self.config = self._load_config(config_path)
-        self.processed_count = 0
-        self.error_count = 0
+    def _format_property(self, prop: dict) -> str:
+        """Convert a Notion property value to a plain string."""
+        prop_type = prop.get("type", "")
 
-    def _load_config(self, path: str) -> dict:
-        config_file = Path(path)
-        if config_file.exists():
-            with open(config_file) as f:
-                return json.load(f)
-        return {"batch_size": 100, "retry_attempts": 3, "output_dir": "output"}
+        if prop_type == "title":
+            parts = prop.get("title", [])
+            return "".join(p.get("plain_text", "") for p in parts)
+        elif prop_type == "rich_text":
+            parts = prop.get("rich_text", [])
+            return "".join(p.get("plain_text", "") for p in parts)
+        elif prop_type == "number":
+            val = prop.get("number")
+            return str(val) if val is not None else ""
+        elif prop_type == "select":
+            sel = prop.get("select")
+            return sel.get("name", "") if sel else ""
+        elif prop_type == "multi_select":
+            items = prop.get("multi_select", [])
+            return ", ".join(i.get("name", "") for i in items)
+        elif prop_type == "date":
+            date_obj = prop.get("date")
+            if not date_obj:
+                return ""
+            start = date_obj.get("start", "")
+            end = date_obj.get("end", "")
+            return f"{start} → {end}" if end else start
+        elif prop_type == "checkbox":
+            return str(prop.get("checkbox", False))
+        elif prop_type == "url":
+            return prop.get("url", "") or ""
+        elif prop_type == "email":
+            return prop.get("email", "") or ""
+        elif prop_type == "phone_number":
+            return prop.get("phone_number", "") or ""
+        elif prop_type == "status":
+            status = prop.get("status")
+            return status.get("name", "") if status else ""
+        elif prop_type == "people":
+            people = prop.get("people", [])
+            return ", ".join(p.get("name", "Unknown") for p in people)
+        elif prop_type == "relation":
+            relations = prop.get("relation", [])
+            return ", ".join(r.get("id", "") for r in relations)
+        elif prop_type == "formula":
+            formula = prop.get("formula", {})
+            f_type = formula.get("type", "")
+            return str(formula.get(f_type, ""))
+        # TODO: handle rollup, created_time, last_edited_time, files
+        else:
+            return f"[{prop_type}]"
 
-    def validate(self, item: dict[str, Any]) -> bool:
-        required = {'id', 'name', 'value', 'timestamp'}
-        if not required.issubset(item.keys()):
-            logger.warning(f"Missing keys in item {item.get('id', '?')}")
-            return False
-        return isinstance(item['value'], (int, float))
+    def export_json(self, rows: list[dict], filename: str = "export.json") -> Path:
+        """Export database rows to JSON."""
+        output = []
+        for row in rows:
+            props = row.get("properties", {})
+            item = {"id": row.get("id", ""), "url": row.get("url", "")}
+            for name, prop in props.items():
+                item[name] = self._format_property(prop)
+            output.append(item)
 
-    def transform(self, item: dict[str, Any]) -> dict[str, Any]:
-        return {**item, 'processed': True, 'value': round(item['value'] * 1.1, 2),
-                'processed_at': datetime.now().isoformat()}
+        filepath = self.output_dir / filename
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(output, f, indent=2, ensure_ascii=False)
+        return filepath
 
-    def process_batch(self, items: list[dict]) -> list[dict]:
-        results = []
-        for item in items:
-            if self.validate(item):
-                results.append(self.transform(item))
-                self.processed_count += 1
+    def export_csv(self, rows: list[dict], filename: str = "export.csv") -> Path:
+        """Export database rows to CSV.
+        TODO: implement this properly
+        """
+        if not rows:
+            filepath = self.output_dir / filename
+            filepath.touch()
+            return filepath
+
+        # Get all property names from first row as headers
+        first_props = rows[0].get("properties", {})
+        headers = ["id"] + list(first_props.keys())
+
+        filepath = self.output_dir / filename
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for row in rows:
+                props = row.get("properties", {})
+                csv_row = [row.get("id", "")]
+                for h in headers[1:]:
+                    prop = props.get(h, {})
+                    csv_row.append(self._format_property(prop))
+                writer.writerow(csv_row)
+        return filepath
+
+    def export_markdown(self, blocks: list[dict], filename: str = "page.md") -> Path:
+        """Export page content blocks to Markdown.
+        TODO: implement block-to-markdown conversion
+        """
+        # Stub - needs implementation
+        filepath = self.output_dir / filename
+        lines = []
+        for block in blocks:
+            block_type = block.get("type", "")
+            # Very basic conversion - needs much more work
+            if block_type == "paragraph":
+                texts = block.get("paragraph", {}).get("rich_text", [])
+                line = "".join(t.get("plain_text", "") for t in texts)
+                lines.append(line)
+            elif block_type.startswith("heading_"):
+                level = int(block_type[-1])
+                texts = block.get(block_type, {}).get("rich_text", [])
+                line = "".join(t.get("plain_text", "") for t in texts)
+                lines.append(f"{'#' * level} {line}")
             else:
-                self.error_count += 1
-        return results
+                lines.append(f"<!-- unsupported: {block_type} -->")
+        filepath.write_text("\n\n".join(lines), encoding="utf-8")
+        return filepath
+PYEOF
 
-    def summary(self) -> dict:
-        total = max(1, self.processed_count + self.error_count)
-        return {"processed": self.processed_count, "errors": self.error_count,
-                "success_rate": f"{self.processed_count / total * 100:.1f}%"}
+    # --- notion_toolkit/config.py ---
+    cat > notion_toolkit/config.py << 'PYEOF'
+"""Configuration management."""
+import json
+import os
+from pathlib import Path
+
+
+DEFAULT_CONFIG_PATH = Path.home() / ".notion-toolkit" / "config.json"
+
+# Hardcoded defaults - should probably use a proper config class
+DEFAULT_OUTPUT_DIR = "output"
+DEFAULT_TIMEOUT = 30
+DEFAULT_PAGE_SIZE = 100
+
+
+def load_config(path: str = None) -> dict:
+    """Load config from file or environment."""
+    config = {
+        "api_key": None,
+        "output_dir": DEFAULT_OUTPUT_DIR,
+        "timeout": DEFAULT_TIMEOUT,
+        "page_size": DEFAULT_PAGE_SIZE,
+    }
+
+    # Try config file
+    config_path = Path(path) if path else DEFAULT_CONFIG_PATH
+    if config_path.exists():
+        with open(config_path) as f:
+            file_config = json.load(f)
+            config.update(file_config)
+
+    # Environment overrides
+    env_key = os.environ.get("NOTION_API_KEY")
+    if env_key:
+        config["api_key"] = env_key
+
+    # TODO: add support for multiple workspace configs
+    # TODO: validate config values with pydantic
+
+    return config
+
+
+def save_config(config: dict, path: str = None):
+    """Save config to file."""
+    config_path = Path(path) if path else DEFAULT_CONFIG_PATH
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+    print(f"Config saved to {config_path}")
+
+
+def init_config():
+    """Interactive config initialization."""
+    print("Notion Toolkit Setup")
+    print("=" * 40)
+    api_key = input("Notion API Key (from integrations page): ").strip()
+    output_dir = input(f"Output directory [{DEFAULT_OUTPUT_DIR}]: ").strip() or DEFAULT_OUTPUT_DIR
+
+    config = {
+        "api_key": api_key,
+        "output_dir": output_dir,
+        "timeout": DEFAULT_TIMEOUT,
+        "page_size": DEFAULT_PAGE_SIZE,
+    }
+    save_config(config)
+    return config
+PYEOF
+
+    # --- notion_toolkit/utils.py ---
+    cat > notion_toolkit/utils.py << 'PYEOF'
+"""Utility functions."""
+import re
+import hashlib
+
+
+def clean_notion_id(raw_id: str) -> str:
+    """Normalize a Notion ID - strip dashes, validate format."""
+    cleaned = raw_id.replace("-", "").strip()
+    # Extract ID from URL if user pastes a full Notion URL
+    url_match = re.search(r"([a-f0-9]{32})", cleaned)
+    if url_match:
+        return url_match.group(1)
+    if len(cleaned) == 32 and all(c in "0123456789abcdef" for c in cleaned):
+        return cleaned
+    # TODO: better error message
+    raise ValueError(f"Invalid Notion ID: {raw_id}")
+
+
+def format_notion_id(raw_id: str) -> str:
+    """Format a 32-char hex ID into Notion's 8-4-4-4-12 UUID format."""
+    clean = clean_notion_id(raw_id)
+    return f"{clean[:8]}-{clean[8:12]}-{clean[12:16]}-{clean[16:20]}-{clean[20:]}"
+
+
+def truncate(text, max_len=80):
+    """Truncate text with ellipsis."""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len - 3] + "..."
+
+
+def file_hash(filepath):
+    """Get SHA256 hash of a file for change detection."""
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()[:16]
+PYEOF
+
+    # --- notion_toolkit/cli.py ---
+    cat > notion_toolkit/cli.py << 'PYEOF'
+"""Command-line interface for Notion Toolkit."""
+import argparse
+import sys
+import json
+from .client import NotionClient
+from .exporter import NotionExporter
+from .config import load_config, init_config
+
+
+def cmd_export(args, config):
+    """Export a Notion database to file."""
+    client = NotionClient(config["api_key"], timeout=config.get("timeout", 30))
+    exporter = NotionExporter(config.get("output_dir", "output"))
+
+    print(f"Querying database {args.database_id}...")
+    rows = client.query_database(args.database_id)
+    print(f"Got {len(rows)} rows")
+
+    if args.format == "json":
+        path = exporter.export_json(rows, args.output or "export.json")
+    elif args.format == "csv":
+        path = exporter.export_csv(rows, args.output or "export.csv")
+    else:
+        print(f"Unknown format: {args.format}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Exported to {path}")
+
+
+def cmd_page(args, config):
+    """Fetch and display a Notion page."""
+    client = NotionClient(config["api_key"])
+    page = client.get_page(args.page_id)
+
+    if args.content:
+        blocks = client.get_page_content(args.page_id)
+        if args.format == "md":
+            exporter = NotionExporter(config.get("output_dir", "output"))
+            path = exporter.export_markdown(blocks)
+            print(f"Exported to {path}")
+        else:
+            print(json.dumps(blocks, indent=2))
+    else:
+        print(json.dumps(page, indent=2))
+
+
+def cmd_search(args, config):
+    """Search Notion workspace."""
+    # TODO: implement search
+    print("Search not implemented yet")
+
+
+def cmd_info(args, config):
+    """Show database schema info."""
+    client = NotionClient(config["api_key"])
+    db = client.get_database(args.database_id)
+
+    print(f"Database: {db.get('title', [{}])[0].get('plain_text', 'Untitled')}")
+    print(f"URL: {db.get('url', 'N/A')}")
+    print("\nProperties:")
+    for name, prop in db.get("properties", {}).items():
+        print(f"  {name}: {prop.get('type', '?')}")
+
+
+def cmd_init(args, config):
+    """Initialize configuration."""
+    init_config()
 
 
 def main():
-    proc = BatchProcessor()
-    data = [{"id": i, "name": f"item_{i}", "value": i * 10.5,
-             "timestamp": datetime.now().isoformat()} for i in range(1, 51)]
-    results = proc.process_batch(data)
-    logger.info(f"Batch complete: {json.dumps(proc.summary())}")
-    out = Path(proc.config["output_dir"])
-    out.mkdir(exist_ok=True)
-    with open(out / "results.json", "w") as f:
-        json.dump(results, f, indent=2)
+    parser = argparse.ArgumentParser(
+        prog="notion-toolkit",
+        description="CLI tools for the Notion API"
+    )
+    parser.add_argument("--config", help="Path to config file")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # export
+    p_export = subparsers.add_parser("export", help="Export a database")
+    p_export.add_argument("database_id", help="Notion database ID or URL")
+    p_export.add_argument("--format", "-f", default="json", choices=["json", "csv"])
+    p_export.add_argument("--output", "-o", help="Output filename")
+
+    # page
+    p_page = subparsers.add_parser("page", help="Fetch a page")
+    p_page.add_argument("page_id", help="Notion page ID or URL")
+    p_page.add_argument("--content", "-c", action="store_true", help="Include page content blocks")
+    p_page.add_argument("--format", "-f", default="json", choices=["json", "md"])
+
+    # search
+    p_search = subparsers.add_parser("search", help="Search workspace")
+    p_search.add_argument("query", help="Search query")
+    p_search.add_argument("--type", "-t", choices=["page", "database"], help="Filter by type")
+
+    # info
+    p_info = subparsers.add_parser("info", help="Show database schema")
+    p_info.add_argument("database_id", help="Notion database ID or URL")
+
+    # init
+    subparsers.add_parser("init", help="Initialize config")
+
+    args = parser.parse_args()
+    if not args.command:
+        parser.print_help()
+        sys.exit(0)
+
+    config = load_config(args.config if hasattr(args, "config") else None)
+    if args.command != "init" and not config.get("api_key"):
+        print("No API key configured. Run 'notion-toolkit init' first.", file=sys.stderr)
+        sys.exit(1)
+
+    commands = {
+        "export": cmd_export,
+        "page": cmd_page,
+        "search": cmd_search,
+        "info": cmd_info,
+        "init": cmd_init,
+    }
+    commands[args.command](args, config)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
 PYEOF
 
-    cat > utils.py << 'UTILEOF'
-"""Shared utility functions."""
-import hashlib
-import re
-from functools import lru_cache
+    # --- tests/__init__.py ---
+    touch tests/__init__.py
+
+    # --- tests/test_utils.py ---
+    cat > tests/test_utils.py << 'PYEOF'
+"""Tests for utility functions."""
+import pytest
+from notion_toolkit.utils import clean_notion_id, format_notion_id, truncate
 
 
-@lru_cache(maxsize=256)
-def slugify(text: str) -> str:
-    text = text.lower().strip()
-    text = re.sub(r'[^\w\s-]', '', text)
-    return re.sub(r'[-\s]+', '-', text)
+def test_clean_notion_id_plain():
+    assert clean_notion_id("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6") == "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 
 
-def checksum(data: str) -> str:
-    return hashlib.sha256(data.encode()).hexdigest()[:12]
+def test_clean_notion_id_with_dashes():
+    assert clean_notion_id("a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6") == "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 
 
-def chunk_list(lst: list, size: int) -> list[list]:
-    return [lst[i:i + size] for i in range(0, len(lst), size)]
-UTILEOF
+def test_clean_notion_id_from_url():
+    url = "https://notion.so/mypage-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    assert clean_notion_id(url) == "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 
-    echo '{"batch_size":100,"retry_attempts":3,"output_dir":"output","log_level":"INFO"}' > config.json
-    echo -e "python-dotenv>=1.0.0\npydantic>=2.0.0" > requirements.txt
 
+def test_clean_notion_id_invalid():
+    with pytest.raises(ValueError):
+        clean_notion_id("not-a-valid-id")
+
+
+def test_format_notion_id():
+    result = format_notion_id("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6")
+    assert result == "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"
+
+
+def test_truncate_short():
+    assert truncate("hello", 10) == "hello"
+
+
+def test_truncate_long():
+    result = truncate("a" * 100, 20)
+    assert len(result) == 20
+    assert result.endswith("...")
+
+
+# TODO: add tests for file_hash
+PYEOF
+
+    # --- pyproject.toml ---
+    cat > pyproject.toml << 'PYEOF'
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "notion-toolkit"
+version = "0.3.1"
+description = "CLI tools for the Notion API"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+notion-toolkit = "notion_toolkit.cli:main"
+PYEOF
+
+    # --- .gitignore ---
+    cat > .gitignore << 'GIEOF'
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+output/
+.env
+*.log
+.notion-toolkit/
+.pytest_cache/
+.coverage
+GIEOF
+
+    # --- README.md ---
     cat > README.md << 'MDEOF'
-# Data Processing Utils
-Lightweight batch data processing utilities.
+# Notion Toolkit
+
+CLI tools for working with the Notion API. Export databases, fetch pages, and search your workspace from the terminal.
+
+## Installation
+
+```bash
+pip install -e .
+```
+
+## Setup
+
+```bash
+notion-toolkit init
+```
+
+You'll need a [Notion integration token](https://www.notion.so/my-integrations).
 
 ## Usage
+
 ```bash
-python main.py
+# Export a database to JSON
+notion-toolkit export <database-id> -f json
+
+# Export to CSV
+notion-toolkit export <database-id> -f csv -o tasks.csv
+
+# Fetch a page
+notion-toolkit page <page-id>
+
+# Fetch page content as markdown
+notion-toolkit page <page-id> --content -f md
+
+# Show database schema
+notion-toolkit info <database-id>
+
+# Search workspace
+notion-toolkit search "meeting notes"
 ```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+## Roadmap
+
+- [x] Database export (JSON/CSV)
+- [x] Page fetching
+- [ ] Markdown export (in progress)
+- [ ] Database sync/watch mode
+- [ ] Batch operations
+- [ ] Template support
+- [ ] Rate limiting
+
+## License
+
+MIT
 MDEOF
 
-    echo -e "__pycache__/\n*.pyc\noutput/\n.env\n*.log" > .gitignore
-    git add -A && git commit -q -m "Initial commit: batch processing utilities"
+    git add -A && git commit -q -m "Initial commit: notion-toolkit CLI for Notion API"
     cd - > /dev/null
 }
 
@@ -270,12 +797,14 @@ PROJECT_DIR="${INSTALL_DIR}/project"
 CRON_SCHEDULE="${CRON_SCHEDULE}"
 TASK_TIMEOUT=${TASK_TIMEOUT}
 LOG_RETAIN_DAYS=${LOG_RETAIN}
+CLAUDE_MODEL="claude-opus-5-5"
+CLAUDE_EFFORT="low"
 ENVEOF
     chmod 600 "$INSTALL_DIR/config.env"
     success "Config written (permissions: 600)"
 
     create_prompts "$INSTALL_DIR/prompts"
-    success "Prompt pool created (10 prompts)"
+    success "Prompt pool created (18 prompts)"
 
     create_keepalive_script
     success "Keepalive script created"

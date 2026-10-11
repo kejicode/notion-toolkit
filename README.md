@@ -19,9 +19,9 @@ curl -fsSL https://raw.githubusercontent.com/kejicode/claude-keepalive/main/setu
 ## What It Does
 
 - Sets up an automated cron job that periodically runs Claude Code against a project
-- Randomly selects from a pool of 10 realistic dev prompts
+- Randomly selects from a pool of 18 project-specific dev prompts (code, bugfix, refactor, test, review)
 - Adds random jitter (0-5 min) between runs to avoid pattern detection
-- Generates a scaffold project with git history for realistic telemetry
+- Generates a Notion Toolkit project scaffold with git history for realistic telemetry
 - Logs everything with automatic rotation
 
 ## Setup Flow
