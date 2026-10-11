@@ -84,44 +84,30 @@ collect_input() {
     read -rp "$(echo -e "${CYAN}账号标签${NC} [${DIM}${default_label}${NC}]: ")" ACCOUNT_LABEL
     ACCOUNT_LABEL="${ACCOUNT_LABEL:-$default_label}"
     echo ""
-    echo -e "  ${DIM}1) 自动 - 在本机生成授权链接（推荐）${NC}"
-    echo -e "  ${DIM}2) 手动 - 粘贴已有的 Token${NC}"
+    echo -e "  ${DIM}1) 现场获取 - 开新终端跑命令拿 Token（推荐）${NC}"
+    echo -e "  ${DIM}2) 直接粘贴 - 已经有 Token 了${NC}"
     read -rp "$(echo -e "${CYAN}认证方式${NC} [${DIM}1${NC}]: ")" auth_method
     echo ""
 
-    if [[ "${auth_method:-1}" == "2" ]]; then
-        while true; do
-            read -rsp "$(echo -e "${CYAN}Token${NC}（输入不可见）: ")" OAUTH_TOKEN
-            echo ""
-            if [ -z "$OAUTH_TOKEN" ]; then
-                warn "Token 不能为空，请重试"
-            else
-                success "Token 已接收（${#OAUTH_TOKEN} 字符）"
-                break
-            fi
-        done
-    else
-        info "正在启动授权流程..."
-        echo -e "${DIM}  按照下方提示完成浏览器授权${NC}"
+    if [[ "${auth_method:-1}" == "1" ]]; then
+        echo -e "  ${BOLD}请打开另一个终端窗口，运行以下命令：${NC}"
         echo ""
-
-        # 直接运行，让用户看到交互过程
-        claude setup-token || true
-
+        echo -e "  ${CYAN}claude setup-token${NC}"
         echo ""
-        echo -e "${DIM}  授权完成后，复制上方显示的 Token 粘贴到下方${NC}"
+        echo -e "  ${DIM}然后在浏览器中完成授权，把显示的 Token 复制过来${NC}"
         echo ""
-        while true; do
-            read -rsp "$(echo -e "${CYAN}Token${NC}（输入不可见）: ")" OAUTH_TOKEN
-            echo ""
-            if [ -z "$OAUTH_TOKEN" ]; then
-                warn "Token 不能为空，请重试"
-            else
-                break
-            fi
-        done
-        success "Token 已接收（${#OAUTH_TOKEN} 字符）"
     fi
+
+    while true; do
+        read -rsp "$(echo -e "${CYAN}粘贴 Token${NC}（输入不可见）: ")" OAUTH_TOKEN
+        echo ""
+        if [ -z "$OAUTH_TOKEN" ]; then
+            warn "Token 不能为空，请重试"
+        else
+            success "Token 已接收（${#OAUTH_TOKEN} 字符）"
+            break
+        fi
+    done
     echo ""
     echo -e "  ${DIM}1) 每 2 小时（推荐）${NC}"
     echo -e "  ${DIM}2) 每 3 小时${NC}"
