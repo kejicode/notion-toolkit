@@ -84,21 +84,58 @@ collect_input() {
     read -rp "$(echo -e "${CYAN}Account label${NC} [${DIM}${default_label}${NC}]: ")" ACCOUNT_LABEL
     ACCOUNT_LABEL="${ACCOUNT_LABEL:-$default_label}"
     echo ""
-    echo -e "${DIM}  How to get your token:${NC}"
-    echo -e "${DIM}  1. Run 'setup-token' command in Termux or any CLI${NC}"
-    echo -e "${DIM}  2. Login via the browser URL it gives you${NC}"
-    echo -e "${DIM}  3. Copy the token and paste it below${NC}"
+    echo -e "  ${DIM}1) Auto - generate auth link on this machine (recommended)${NC}"
+    echo -e "  ${DIM}2) Manual - paste a token you already have${NC}"
+    read -rp "$(echo -e "${CYAN}Auth method${NC} [${DIM}1${NC}]: ")" auth_method
     echo ""
-    while true; do
-        read -rsp "$(echo -e "${CYAN}Setup Token${NC} (input hidden): ")" OAUTH_TOKEN
+
+    if [[ "${auth_method:-1}" == "2" ]]; then
+        # Manual token input
+        while true; do
+            read -rsp "$(echo -e "${CYAN}Setup Token${NC} (input hidden): ")" OAUTH_TOKEN
+            echo ""
+            if [ -z "$OAUTH_TOKEN" ]; then
+                warn "Token cannot be empty, try again"
+            else
+                success "Token received (${#OAUTH_TOKEN} chars)"
+                break
+            fi
+        done
+    else
+        # Auto: run claude setup-token and capture output
+        info "Generating auth link..."
         echo ""
-        if [ -z "$OAUTH_TOKEN" ]; then
-            warn "Token cannot be empty, try again"
-        else
-            success "Token received (${#OAUTH_TOKEN} chars)"
-            break
+
+        TOKEN_OUTPUT=$(claude setup-token 2>&1) || true
+
+        # Extract the URL for the user
+        AUTH_URL=$(echo "$TOKEN_OUTPUT" | grep -oP 'https://[^\s]+' | head -1)
+        if [ -n "$AUTH_URL" ]; then
+            echo -e "  ${BOLD}Open this link in your browser to authorize:${NC}"
+            echo ""
+            echo -e "  ${CYAN}${AUTH_URL}${NC}"
+            echo ""
         fi
-    done
+
+        # Extract the token from output
+        OAUTH_TOKEN=$(echo "$TOKEN_OUTPUT" | grep -oP '(?<=token:\s).*' | head -1)
+
+        # If auto-extraction failed, ask user to paste it
+        if [ -z "$OAUTH_TOKEN" ]; then
+            echo -e "${DIM}  After authorizing, copy the token shown and paste it below${NC}"
+            echo ""
+            while true; do
+                read -rsp "$(echo -e "${CYAN}Setup Token${NC} (input hidden): ")" OAUTH_TOKEN
+                echo ""
+                if [ -z "$OAUTH_TOKEN" ]; then
+                    warn "Token cannot be empty, try again"
+                else
+                    break
+                fi
+            done
+        fi
+        success "Token received (${#OAUTH_TOKEN} chars)"
+    fi
     echo ""
     echo -e "  ${DIM}1) Every 2 hours (recommended)${NC}"
     echo -e "  ${DIM}2) Every 3 hours${NC}"
