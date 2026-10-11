@@ -26,132 +26,127 @@ banner() {
  |_| \_|\___/ \__|_|\___/|_| |_|  \_/ \___/ \___/|_|_|\_\_|\__|
 ART
     echo -e "${NC}"
-    echo -e "${DIM}  Notion API toolkit - local development environment setup${NC}"
+    echo -e "${DIM}  Notion API 工具箱 - 本地开发环境配置${NC}"
     echo ""
 }
 
 install_deps() {
-    info "Checking dependencies..."
+    info "检查依赖..."
 
     # nodejs + npm
     if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
-        warn "Node.js / npm not found, installing..."
+        warn "未找到 Node.js / npm，正在安装..."
         if command -v apt &>/dev/null; then
             sudo apt update -qq && sudo apt install -y nodejs npm
         else
-            error "Unsupported package manager. Please install nodejs and npm manually."
+            error "不支持的包管理器，请手动安装 nodejs 和 npm"
         fi
-        success "Node.js $(node -v) / npm $(npm -v) installed"
+        success "Node.js $(node -v) / npm $(npm -v) 已安装"
     else
-        success "Node.js $(node -v) / npm $(npm -v) found"
+        success "Node.js $(node -v) / npm $(npm -v) 已就绪"
     fi
 
     # claude code CLI
     if ! command -v claude &>/dev/null; then
-        warn "CLI not found, installing..."
+        warn "未找到 CLI，正在安装..."
         sudo npm install -g @anthropic-ai/claude-code
         if command -v claude &>/dev/null; then
-            success "CLI installed: $(which claude)"
+            success "CLI 已安装: $(which claude)"
         else
-            error "CLI installation failed"
+            error "CLI 安装失败"
         fi
     else
-        success "CLI found: $(which claude)"
+        success "CLI 已就绪: $(which claude)"
     fi
 
     # git
     if ! command -v git &>/dev/null; then
-        warn "git not found, installing..."
+        warn "未找到 git，正在安装..."
         sudo apt install -y git
     fi
-    success "git found"
+    success "git 已就绪"
 
     # crontab
     if ! command -v crontab &>/dev/null; then
-        warn "cron not found, installing..."
+        warn "未找到 cron，正在安装..."
         sudo apt install -y cron
         sudo systemctl enable cron && sudo systemctl start cron
     fi
-    success "cron found"
+    success "cron 已就绪"
 
     echo ""
 }
 
 collect_input() {
-    echo -e "${BOLD}── Configuration ──${NC}"
+    echo -e "${BOLD}── 配置 ──${NC}"
     echo ""
     local default_label="acc-$(hostname -s | tr '[:upper:]' '[:lower:]')-$(date +%s | tail -c 5)"
-    read -rp "$(echo -e "${CYAN}Account label${NC} [${DIM}${default_label}${NC}]: ")" ACCOUNT_LABEL
+    read -rp "$(echo -e "${CYAN}账号标签${NC} [${DIM}${default_label}${NC}]: ")" ACCOUNT_LABEL
     ACCOUNT_LABEL="${ACCOUNT_LABEL:-$default_label}"
     echo ""
-    echo -e "  ${DIM}1) Auto - generate auth link on this machine (recommended)${NC}"
-    echo -e "  ${DIM}2) Manual - paste a token you already have${NC}"
-    read -rp "$(echo -e "${CYAN}Auth method${NC} [${DIM}1${NC}]: ")" auth_method
+    echo -e "  ${DIM}1) 自动 - 在本机生成授权链接（推荐）${NC}"
+    echo -e "  ${DIM}2) 手动 - 粘贴已有的 Token${NC}"
+    read -rp "$(echo -e "${CYAN}认证方式${NC} [${DIM}1${NC}]: ")" auth_method
     echo ""
 
     if [[ "${auth_method:-1}" == "2" ]]; then
-        # Manual token input
         while true; do
-            read -rsp "$(echo -e "${CYAN}Setup Token${NC} (input hidden): ")" OAUTH_TOKEN
+            read -rsp "$(echo -e "${CYAN}Token${NC}（输入不可见）: ")" OAUTH_TOKEN
             echo ""
             if [ -z "$OAUTH_TOKEN" ]; then
-                warn "Token cannot be empty, try again"
+                warn "Token 不能为空，请重试"
             else
-                success "Token received (${#OAUTH_TOKEN} chars)"
+                success "Token 已接收（${#OAUTH_TOKEN} 字符）"
                 break
             fi
         done
     else
-        # Auto: run claude setup-token and capture output
-        info "Generating auth link..."
+        info "正在生成授权链接..."
         echo ""
 
         TOKEN_OUTPUT=$(claude setup-token 2>&1) || true
 
-        # Extract the URL for the user
         AUTH_URL=$(echo "$TOKEN_OUTPUT" | grep -oP 'https://[^\s]+' | head -1)
         if [ -n "$AUTH_URL" ]; then
-            echo -e "  ${BOLD}Open this link in your browser to authorize:${NC}"
+            echo -e "  ${BOLD}在浏览器中打开以下链接完成授权：${NC}"
             echo ""
             echo -e "  ${CYAN}${AUTH_URL}${NC}"
             echo ""
         fi
 
-        # Extract the token from output
         OAUTH_TOKEN=$(echo "$TOKEN_OUTPUT" | grep -oP '(?<=token:\s).*' | head -1)
 
-        # If auto-extraction failed, ask user to paste it
         if [ -z "$OAUTH_TOKEN" ]; then
-            echo -e "${DIM}  After authorizing, copy the token shown and paste it below${NC}"
+            echo -e "${DIM}  授权完成后，复制显示的 Token 粘贴到下方${NC}"
             echo ""
             while true; do
-                read -rsp "$(echo -e "${CYAN}Setup Token${NC} (input hidden): ")" OAUTH_TOKEN
+                read -rsp "$(echo -e "${CYAN}Token${NC}（输入不可见）: ")" OAUTH_TOKEN
                 echo ""
                 if [ -z "$OAUTH_TOKEN" ]; then
-                    warn "Token cannot be empty, try again"
+                    warn "Token 不能为空，请重试"
                 else
                     break
                 fi
             done
         fi
-        success "Token received (${#OAUTH_TOKEN} chars)"
+        success "Token 已接收（${#OAUTH_TOKEN} 字符）"
     fi
     echo ""
-    echo -e "  ${DIM}1) Every 2 hours (recommended)${NC}"
-    echo -e "  ${DIM}2) Every 3 hours${NC}"
-    echo -e "  ${DIM}3) Every 4 hours${NC}"
-    echo -e "  ${DIM}4) Custom cron expression${NC}"
-    read -rp "$(echo -e "${CYAN}Run interval${NC} [${DIM}1${NC}]: ")" interval_choice
+    echo -e "  ${DIM}1) 每 2 小时（推荐）${NC}"
+    echo -e "  ${DIM}2) 每 3 小时${NC}"
+    echo -e "  ${DIM}3) 每 4 小时${NC}"
+    echo -e "  ${DIM}4) 自定义 cron 表达式${NC}"
+    read -rp "$(echo -e "${CYAN}运行间隔${NC} [${DIM}1${NC}]: ")" interval_choice
     case "${interval_choice:-1}" in
         1) CRON_SCHEDULE="0 */2 * * *" ;;
         2) CRON_SCHEDULE="0 */3 * * *" ;;
         3) CRON_SCHEDULE="0 */4 * * *" ;;
-        4) read -rp "  Cron expression: " CRON_SCHEDULE ;;
+        4) read -rp "  Cron 表达式: " CRON_SCHEDULE ;;
         *) CRON_SCHEDULE="0 */2 * * *" ;;
     esac
-    read -rp "$(echo -e "${CYAN}Task timeout (sec)${NC} [${DIM}180${NC}]: ")" TASK_TIMEOUT
+    read -rp "$(echo -e "${CYAN}任务超时（秒）${NC} [${DIM}180${NC}]: ")" TASK_TIMEOUT
     TASK_TIMEOUT="${TASK_TIMEOUT:-180}"
-    read -rp "$(echo -e "${CYAN}Log retention (days)${NC} [${DIM}7${NC}]: ")" LOG_RETAIN
+    read -rp "$(echo -e "${CYAN}日志保留天数${NC} [${DIM}7${NC}]: ")" LOG_RETAIN
     LOG_RETAIN="${LOG_RETAIN:-7}"
     echo ""
 }
@@ -851,7 +846,7 @@ MDEOF
 }
 
 create_structure() {
-    info "Creating file structure..."
+    info "创建文件结构..."
     mkdir -p "$INSTALL_DIR/logs"
 
     # Config
@@ -866,99 +861,99 @@ CLAUDE_MODEL="claude-opus-5-5"
 CLAUDE_EFFORT="low"
 ENVEOF
     chmod 600 "$INSTALL_DIR/config.env"
-    success "Config written (permissions: 600)"
+    success "配置已写入（权限: 600）"
 
     create_prompts "$INSTALL_DIR/prompts"
-    success "Prompt pool created (18 prompts)"
+    success "任务池已创建（18 个任务）"
 
     create_runner_script
-    success "Runner script created"
+    success "运行脚本已创建"
 
     create_project_scaffold
-    success "Project scaffold initialized"
+    success "项目脚手架已初始化"
 }
 
 install_cron() {
-    info "Installing cron job..."
+    info "安装定时任务..."
     local cron_line="$CRON_SCHEDULE /bin/bash $INSTALL_DIR/runner.sh"
     (crontab -l 2>/dev/null | grep -v "notion-toolkit/runner.sh" || true; echo "$cron_line") | crontab -
-    success "Cron installed: $CRON_SCHEDULE"
+    success "定时任务已安装: $CRON_SCHEDULE"
 }
 
 show_summary() {
     echo ""
-    echo -e "${BOLD}── Installation Summary ──${NC}"
+    echo -e "${BOLD}── 安装概览 ──${NC}"
     echo ""
-    echo -e "  Account:     ${GREEN}${ACCOUNT_LABEL}${NC}"
-    echo -e "  Install dir: ${DIM}${INSTALL_DIR}${NC}"
-    echo -e "  Schedule:    ${CRON_SCHEDULE}"
-    echo -e "  Timeout:     ${TASK_TIMEOUT}s"
-    echo -e "  Log retain:  ${LOG_RETAIN} days"
-    echo -e "  Prompts:     $(find "$INSTALL_DIR/prompts" -name '*.txt' | wc -l) in pool"
+    echo -e "  账号:       ${GREEN}${ACCOUNT_LABEL}${NC}"
+    echo -e "  安装目录:   ${DIM}${INSTALL_DIR}${NC}"
+    echo -e "  运行间隔:   ${CRON_SCHEDULE}"
+    echo -e "  任务超时:   ${TASK_TIMEOUT}s"
+    echo -e "  日志保留:   ${LOG_RETAIN} 天"
+    echo -e "  任务池:     $(find "$INSTALL_DIR/prompts" -name '*.txt' | wc -l) 个任务"
     echo ""
-    echo -e "  ${DIM}Cron entry:${NC}"
+    echo -e "  ${DIM}Cron 条目:${NC}"
     echo -e "  $(crontab -l 2>/dev/null | grep runner)"
     echo ""
-    echo -e "${BOLD}── Commands ──${NC}"
+    echo -e "${BOLD}── 常用命令 ──${NC}"
     echo ""
-    echo -e "  Test run:       ${DIM}bash ~/notion-toolkit/runner.sh${NC}"
-    echo -e "  View logs:      ${DIM}tail -f ~/notion-toolkit/logs/*.log${NC}"
-    echo -e "  Update token:   ${DIM}bash $0 --update-token${NC}"
-    echo -e "  Check status:   ${DIM}bash $0 --status${NC}"
-    echo -e "  Uninstall:      ${DIM}bash $0 --uninstall${NC}"
+    echo -e "  手动运行:     ${DIM}bash ~/notion-toolkit/runner.sh${NC}"
+    echo -e "  查看日志:     ${DIM}tail -f ~/notion-toolkit/logs/*.log${NC}"
+    echo -e "  更新 Token:   ${DIM}bash $0 --update-token${NC}"
+    echo -e "  查看状态:     ${DIM}bash $0 --status${NC}"
+    echo -e "  卸载:         ${DIM}bash $0 --uninstall${NC}"
     echo ""
 }
 
 update_token() {
-    [ -f "$INSTALL_DIR/config.env" ] || error "No installation found at $INSTALL_DIR"
-    echo -e "${BOLD}── Update Token ──${NC}"
+    [ -f "$INSTALL_DIR/config.env" ] || error "未找到安装目录: $INSTALL_DIR"
+    echo -e "${BOLD}── 更新 Token ──${NC}"
     source "$INSTALL_DIR/config.env"
-    echo -e "  Account: ${GREEN}${ACCOUNT_LABEL}${NC}"
+    echo -e "  账号: ${GREEN}${ACCOUNT_LABEL}${NC}"
     echo ""
-    read -rsp "$(echo -e "${CYAN}New token${NC} (hidden): ")" new_token
+    read -rsp "$(echo -e "${CYAN}新 Token${NC}（输入不可见）: ")" new_token
     echo ""
-    [ -z "$new_token" ] && error "Token cannot be empty"
+    [ -z "$new_token" ] && error "Token 不能为空"
     sed -i "s|^CLAUDE_CODE_OAUTH_TOKEN=.*|CLAUDE_CODE_OAUTH_TOKEN=\"${new_token}\"|" "$INSTALL_DIR/config.env"
-    success "Token updated (${#new_token} chars)"
+    success "Token 已更新（${#new_token} 字符）"
 }
 
 show_status() {
-    [ -f "$INSTALL_DIR/config.env" ] || error "No installation found at $INSTALL_DIR"
+    [ -f "$INSTALL_DIR/config.env" ] || error "未找到安装目录: $INSTALL_DIR"
     source "$INSTALL_DIR/config.env"
-    echo -e "${BOLD}── Status: ${ACCOUNT_LABEL} ──${NC}"
+    echo -e "${BOLD}── 状态: ${ACCOUNT_LABEL} ──${NC}"
     echo ""
     if crontab -l 2>/dev/null | grep -q "runner.sh"; then
-        success "Cron active"
+        success "定时任务运行中"
         echo -e "  $(crontab -l 2>/dev/null | grep runner)"
     else
-        warn "Cron not found"
+        warn "未找到定时任务"
     fi
     echo ""
     local latest=$(ls -t "$INSTALL_DIR/logs/"*.log 2>/dev/null | head -1)
     if [ -n "$latest" ]; then
-        echo -e "  ${DIM}Latest: $latest${NC}"
+        echo -e "  ${DIM}最新日志: $latest${NC}"
         tail -3 "$latest" | sed 's/^/    /'
     else
-        warn "No logs yet"
+        warn "暂无日志"
     fi
     echo ""
     local tlen=${#CLAUDE_CODE_OAUTH_TOKEN}
     if [ "$tlen" -gt 10 ]; then
-        success "Token configured (${tlen} chars)"
+        success "Token 已配置（${tlen} 字符）"
     else
-        warn "Token looks short (${tlen} chars)"
+        warn "Token 看起来太短了（${tlen} 字符）"
     fi
 }
 
 do_uninstall() {
-    echo -e "${BOLD}── Uninstall ──${NC}"
+    echo -e "${BOLD}── 卸载 ──${NC}"
     echo ""
-    warn "Will remove: $INSTALL_DIR + cron job"
-    read -rp "$(echo -e "${RED}Confirm?${NC} [y/N] ")" yn
-    [[ "$yn" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 0; }
+    warn "将删除: $INSTALL_DIR + 定时任务"
+    read -rp "$(echo -e "${RED}确认?${NC} [y/N] ")" yn
+    [[ "$yn" =~ ^[Yy]$ ]] || { info "已取消"; exit 0; }
     (crontab -l 2>/dev/null | grep -v "notion-toolkit/runner.sh" || true) | crontab -
     rm -rf "$INSTALL_DIR"
-    success "Fully uninstalled"
+    success "已完全卸载"
 }
 
 main() {
@@ -975,13 +970,13 @@ main() {
     install_cron
     show_summary
 
-    read -rp "$(echo -e "${CYAN}Run a test now?${NC} [Y/n] ")" rt
+    read -rp "$(echo -e "${CYAN}现在测试运行一次?${NC} [Y/n] ")" rt
     if [[ ! "$rt" =~ ^[Nn]$ ]]; then
-        info "Running test..."
-        bash "$INSTALL_DIR/runner.sh" && success "Test done! Check logs." || warn "Test had warnings, check logs."
+        info "正在测试运行..."
+        bash "$INSTALL_DIR/runner.sh" && success "测试完成！查看日志确认输出" || warn "测试有警告，请查看日志"
     fi
     echo ""
-    success "All set! Dev environment is running on schedule."
+    success "全部搞定！定时任务已在后台运行"
     echo ""
 }
 
