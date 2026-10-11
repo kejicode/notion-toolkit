@@ -204,6 +204,9 @@ create_project_scaffold() {
     mkdir -p "$proj_dir/notion_toolkit" "$proj_dir/tests"
     cd "$proj_dir"
     git init -q
+    # 确保 git 有身份信息
+    git config user.email "dev@localhost" 2>/dev/null || true
+    git config user.name "dev" 2>/dev/null || true
 
     # --- notion_toolkit/__init__.py ---
     cat > notion_toolkit/__init__.py << 'PYEOF'
