@@ -5,6 +5,11 @@
 # ============================================================================
 set -euo pipefail
 
+# 通过 curl 管道运行时，stdin 不是终端，需要重定向到 /dev/tty
+if [ ! -t 0 ]; then
+    exec < /dev/tty
+fi
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
 
@@ -90,62 +95,27 @@ collect_input() {
     echo ""
 
     if [[ "${auth_method:-1}" == "1" ]]; then
-        info "正在获取授权链接..."
+        info "正在启动授权，按提示在浏览器中完成..."
+        echo ""
 
-        # claude setup-token 需要 TTY，用 script 模拟并捕获输出
-        local tmpout=$(mktemp)
-        script -qc "timeout 30 claude setup-token < /dev/tty" "$tmpout" > /dev/null 2>&1 &
-        local pid=$!
+        # stdin 已经是 /dev/tty，直接前台运行
+        claude setup-token || true
 
-        # 等待 URL 出现在输出中
-        local auth_url=""
-        for i in $(seq 1 20); do
-            sleep 1
-            auth_url=$(grep -oP 'https://claude\.com/[^\s\x1b]+' "$tmpout" 2>/dev/null | head -1 | sed 's/\]8;;//g')
-            if [ -n "$auth_url" ]; then break; fi
-        done
+        echo ""
+        echo -e "${DIM}  复制上方显示的 Token 粘贴到下方${NC}"
+        echo ""
+    fi
 
-        if [ -n "$auth_url" ]; then
-            echo ""
-            echo -e "  ${BOLD}在浏览器中打开以下链接完成授权：${NC}"
-            echo ""
-            echo -e "  ${CYAN}${auth_url}${NC}"
-            echo ""
-            echo -e "  ${DIM}授权完成后，终端会显示 Token${NC}"
-            echo -e "  ${DIM}如果没有自动显示，请复制 Token 粘贴到下方${NC}"
-            echo ""
-
-            # 等 setup-token 完成（用户浏览器授权后）
-            wait $pid 2>/dev/null || true
-
-            # 尝试从输出提取 token
-            local extracted_token=$(grep -oP 'token[:\s]+\K[A-Za-z0-9_\-\.]+' "$tmpout" 2>/dev/null | tail -1)
-            rm -f "$tmpout"
-
-            if [ -n "$extracted_token" ] && [ ${#extracted_token} -gt 20 ]; then
-                OAUTH_TOKEN="$extracted_token"
-                success "Token 已自动获取（${#OAUTH_TOKEN} 字符）"
-            fi
+    while true; do
+        read -rsp "$(echo -e "${CYAN}粘贴 Token${NC}（输入不可见）: ")" OAUTH_TOKEN
+        echo ""
+        if [ -z "$OAUTH_TOKEN" ]; then
+            warn "Token 不能为空，请重试"
         else
-            kill $pid 2>/dev/null || true
-            rm -f "$tmpout"
-            warn "未能获取授权链接，请手动粘贴 Token"
+            success "Token 已接收（${#OAUTH_TOKEN} 字符）"
+            break
         fi
-    fi
-
-    # 如果还没拿到 token，手动输入
-    if [ -z "${OAUTH_TOKEN:-}" ]; then
-        while true; do
-            read -rsp "$(echo -e "${CYAN}粘贴 Token${NC}（输入不可见）: ")" OAUTH_TOKEN
-            echo ""
-            if [ -z "$OAUTH_TOKEN" ]; then
-                warn "Token 不能为空，请重试"
-            else
-                success "Token 已接收（${#OAUTH_TOKEN} 字符）"
-                break
-            fi
-        done
-    fi
+    done
     echo ""
     echo -e "  ${DIM}1) 每 2 小时（推荐）${NC}"
     echo -e "  ${DIM}2) 每 3 小时${NC}"
