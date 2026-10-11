@@ -34,12 +34,12 @@ ART
 preflight() {
     info "Checking environment..."
     if ! command -v claude &>/dev/null; then
-        warn "Claude Code CLI not found in PATH"
+        warn "CLI tool not found in PATH"
         echo -e "  Install: ${DIM}npm install -g @anthropic-ai/claude-code${NC}"
         read -rp "  Continue anyway? [y/N] " yn
         [[ "$yn" =~ ^[Yy]$ ]] || exit 0
     else
-        success "Claude Code CLI found: $(which claude)"
+        success "CLI found: $(which claude)"
     fi
     command -v git &>/dev/null || error "git is required but not installed"
     command -v crontab &>/dev/null || error "crontab is required but not installed"
@@ -55,7 +55,7 @@ collect_input() {
     ACCOUNT_LABEL="${ACCOUNT_LABEL:-$default_label}"
     echo ""
     echo -e "${DIM}  How to get your token:${NC}"
-    echo -e "${DIM}  1. Run 'claude setup-token' in Termux or any CLI${NC}"
+    echo -e "${DIM}  1. Run 'setup-token' command in Termux or any CLI${NC}"
     echo -e "${DIM}  2. Login via the browser URL it gives you${NC}"
     echo -e "${DIM}  3. Copy the token and paste it below${NC}"
     echo ""
