@@ -6,8 +6,12 @@
 set -euo pipefail
 
 # 通过 curl 管道运行时，stdin 不是终端，需要重定向到 /dev/tty
-if [ ! -t 0 ]; then
+if [ ! -t 0 ] && [ -e /dev/tty ]; then
     exec < /dev/tty
+elif [ ! -t 0 ]; then
+    echo "错误: 需要交互式终端。请先下载脚本再运行:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/kejicode/notion-toolkit/main/setup.sh -o setup.sh && bash setup.sh"
+    exit 1
 fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
