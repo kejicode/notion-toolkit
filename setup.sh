@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-#  Claude Code Keepalive - Interactive Setup
+#  Notion Toolkit - Development Environment Setup
 #  Usage: curl -fsSL <raw-url> | bash
 #         or: git clone <repo> && cd <repo> && bash setup.sh
 # ============================================================================
@@ -9,7 +9,7 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
 
-INSTALL_DIR="$HOME/claude-keepalive"
+INSTALL_DIR="$HOME/notion-toolkit"
 
 info()    { echo -e "${CYAN}[*]${NC} $*"; }
 success() { echo -e "${GREEN}[✓]${NC} $*"; }
@@ -112,8 +112,8 @@ create_prompts() {
     echo "Refactor config.py to use pydantic for settings validation instead of raw dict access. Add proper defaults and type checking." > "$dir/18.txt"
 }
 
-create_keepalive_script() {
-    cat > "$INSTALL_DIR/keepalive.sh" << 'KALIVE'
+create_runner_script() {
+    cat > "$INSTALL_DIR/runner.sh" << 'KALIVE'
 #!/bin/bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -144,7 +144,7 @@ fi
 log "========== Session End ============"
 find "$LOG_DIR" -name '*.log' -mtime +"$LOG_RETAIN_DAYS" -delete 2>/dev/null || true
 KALIVE
-    chmod +x "$INSTALL_DIR/keepalive.sh"
+    chmod +x "$INSTALL_DIR/runner.sh"
 }
 
 create_project_scaffold() {
@@ -804,8 +804,8 @@ ENVEOF
     create_prompts "$INSTALL_DIR/prompts"
     success "Prompt pool created (18 prompts)"
 
-    create_keepalive_script
-    success "Keepalive script created"
+    create_runner_script
+    success "Runner script created"
 
     create_project_scaffold
     success "Project scaffold initialized"
@@ -813,8 +813,8 @@ ENVEOF
 
 install_cron() {
     info "Installing cron job..."
-    local cron_line="$CRON_SCHEDULE /bin/bash $INSTALL_DIR/keepalive.sh"
-    (crontab -l 2>/dev/null | grep -v "claude-keepalive/keepalive.sh" || true; echo "$cron_line") | crontab -
+    local cron_line="$CRON_SCHEDULE /bin/bash $INSTALL_DIR/runner.sh"
+    (crontab -l 2>/dev/null | grep -v "notion-toolkit/runner.sh" || true; echo "$cron_line") | crontab -
     success "Cron installed: $CRON_SCHEDULE"
 }
 
@@ -830,12 +830,12 @@ show_summary() {
     echo -e "  Prompts:     $(find "$INSTALL_DIR/prompts" -name '*.txt' | wc -l) in pool"
     echo ""
     echo -e "  ${DIM}Cron entry:${NC}"
-    echo -e "  $(crontab -l 2>/dev/null | grep keepalive)"
+    echo -e "  $(crontab -l 2>/dev/null | grep runner)"
     echo ""
     echo -e "${BOLD}── Commands ──${NC}"
     echo ""
-    echo -e "  Test run:       ${DIM}bash ~/claude-keepalive/keepalive.sh${NC}"
-    echo -e "  View logs:      ${DIM}tail -f ~/claude-keepalive/logs/*.log${NC}"
+    echo -e "  Test run:       ${DIM}bash ~/notion-toolkit/runner.sh${NC}"
+    echo -e "  View logs:      ${DIM}tail -f ~/notion-toolkit/logs/*.log${NC}"
     echo -e "  Update token:   ${DIM}bash $0 --update-token${NC}"
     echo -e "  Check status:   ${DIM}bash $0 --status${NC}"
     echo -e "  Uninstall:      ${DIM}bash $0 --uninstall${NC}"
@@ -860,9 +860,9 @@ show_status() {
     source "$INSTALL_DIR/config.env"
     echo -e "${BOLD}── Status: ${ACCOUNT_LABEL} ──${NC}"
     echo ""
-    if crontab -l 2>/dev/null | grep -q "keepalive.sh"; then
+    if crontab -l 2>/dev/null | grep -q "runner.sh"; then
         success "Cron active"
-        echo -e "  $(crontab -l 2>/dev/null | grep keepalive)"
+        echo -e "  $(crontab -l 2>/dev/null | grep runner)"
     else
         warn "Cron not found"
     fi
@@ -889,7 +889,7 @@ do_uninstall() {
     warn "Will remove: $INSTALL_DIR + cron job"
     read -rp "$(echo -e "${RED}Confirm?${NC} [y/N] ")" yn
     [[ "$yn" =~ ^[Yy]$ ]] || { info "Cancelled."; exit 0; }
-    (crontab -l 2>/dev/null | grep -v "claude-keepalive/keepalive.sh" || true) | crontab -
+    (crontab -l 2>/dev/null | grep -v "notion-toolkit/runner.sh" || true) | crontab -
     rm -rf "$INSTALL_DIR"
     success "Fully uninstalled"
 }
@@ -911,10 +911,10 @@ main() {
     read -rp "$(echo -e "${CYAN}Run a test now?${NC} [Y/n] ")" rt
     if [[ ! "$rt" =~ ^[Nn]$ ]]; then
         info "Running test..."
-        bash "$INSTALL_DIR/keepalive.sh" && success "Test done! Check logs." || warn "Test had warnings, check logs."
+        bash "$INSTALL_DIR/runner.sh" && success "Test done! Check logs." || warn "Test had warnings, check logs."
     fi
     echo ""
-    success "All set! Keepalive is running on schedule."
+    success "All set! Dev environment is running on schedule."
     echo ""
 }
 
