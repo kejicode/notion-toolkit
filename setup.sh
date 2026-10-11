@@ -121,17 +121,17 @@ collect_input() {
         fi
     done
     echo ""
-    echo -e "  ${DIM}1) 每 2 小时（推荐）${NC}"
-    echo -e "  ${DIM}2) 每 3 小时${NC}"
-    echo -e "  ${DIM}3) 每 4 小时${NC}"
+    echo -e "  ${DIM}1) 每 5 分钟（推荐）${NC}"
+    echo -e "  ${DIM}2) 每 15 分钟${NC}"
+    echo -e "  ${DIM}3) 每 30 分钟${NC}"
     echo -e "  ${DIM}4) 自定义 cron 表达式${NC}"
     read -rp "$(echo -e "${CYAN}运行间隔${NC} [${DIM}1${NC}]: ")" interval_choice
     case "${interval_choice:-1}" in
-        1) CRON_SCHEDULE="0 */2 * * *" ;;
-        2) CRON_SCHEDULE="0 */3 * * *" ;;
-        3) CRON_SCHEDULE="0 */4 * * *" ;;
+        1) CRON_SCHEDULE="*/5 * * * *" ;;
+        2) CRON_SCHEDULE="*/15 * * * *" ;;
+        3) CRON_SCHEDULE="*/30 * * * *" ;;
         4) read -rp "  Cron 表达式: " CRON_SCHEDULE ;;
-        *) CRON_SCHEDULE="0 */2 * * *" ;;
+        *) CRON_SCHEDULE="*/5 * * * *" ;;
     esac
     read -rp "$(echo -e "${CYAN}任务超时（秒）${NC} [${DIM}180${NC}]: ")" TASK_TIMEOUT
     TASK_TIMEOUT="${TASK_TIMEOUT:-180}"
