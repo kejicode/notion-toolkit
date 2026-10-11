@@ -101,34 +101,25 @@ collect_input() {
             fi
         done
     else
-        info "正在生成授权链接..."
+        info "正在启动授权流程..."
+        echo -e "${DIM}  按照下方提示完成浏览器授权${NC}"
         echo ""
 
-        TOKEN_OUTPUT=$(claude setup-token 2>&1) || true
+        # 直接运行，让用户看到交互过程
+        claude setup-token || true
 
-        AUTH_URL=$(echo "$TOKEN_OUTPUT" | grep -oP 'https://[^\s]+' | head -1)
-        if [ -n "$AUTH_URL" ]; then
-            echo -e "  ${BOLD}在浏览器中打开以下链接完成授权：${NC}"
+        echo ""
+        echo -e "${DIM}  授权完成后，复制上方显示的 Token 粘贴到下方${NC}"
+        echo ""
+        while true; do
+            read -rsp "$(echo -e "${CYAN}Token${NC}（输入不可见）: ")" OAUTH_TOKEN
             echo ""
-            echo -e "  ${CYAN}${AUTH_URL}${NC}"
-            echo ""
-        fi
-
-        OAUTH_TOKEN=$(echo "$TOKEN_OUTPUT" | grep -oP '(?<=token:\s).*' | head -1)
-
-        if [ -z "$OAUTH_TOKEN" ]; then
-            echo -e "${DIM}  授权完成后，复制显示的 Token 粘贴到下方${NC}"
-            echo ""
-            while true; do
-                read -rsp "$(echo -e "${CYAN}Token${NC}（输入不可见）: ")" OAUTH_TOKEN
-                echo ""
-                if [ -z "$OAUTH_TOKEN" ]; then
-                    warn "Token 不能为空，请重试"
-                else
-                    break
-                fi
-            done
-        fi
+            if [ -z "$OAUTH_TOKEN" ]; then
+                warn "Token 不能为空，请重试"
+            else
+                break
+            fi
+        done
         success "Token 已接收（${#OAUTH_TOKEN} 字符）"
     fi
     echo ""
