@@ -90,24 +90,62 @@ collect_input() {
     echo ""
 
     if [[ "${auth_method:-1}" == "1" ]]; then
-        echo -e "  ${BOLD}请打开另一个终端窗口，运行以下命令：${NC}"
-        echo ""
-        echo -e "  ${CYAN}claude setup-token${NC}"
-        echo ""
-        echo -e "  ${DIM}然后在浏览器中完成授权，把显示的 Token 复制过来${NC}"
-        echo ""
+        info "正在获取授权链接..."
+
+        # claude setup-token 需要 TTY，用 script 模拟并捕获输出
+        local tmpout=$(mktemp)
+        script -qc "timeout 30 claude setup-token < /dev/tty" "$tmpout" > /dev/null 2>&1 &
+        local pid=$!
+
+        # 等待 URL 出现在输出中
+        local auth_url=""
+        for i in $(seq 1 20); do
+            sleep 1
+            auth_url=$(grep -oP 'https://claude\.com/[^\s\x1b]+' "$tmpout" 2>/dev/null | head -1 | sed 's/\]8;;//g')
+            if [ -n "$auth_url" ]; then break; fi
+        done
+
+        if [ -n "$auth_url" ]; then
+            echo ""
+            echo -e "  ${BOLD}在浏览器中打开以下链接完成授权：${NC}"
+            echo ""
+            echo -e "  ${CYAN}${auth_url}${NC}"
+            echo ""
+            echo -e "  ${DIM}授权完成后，终端会显示 Token${NC}"
+            echo -e "  ${DIM}如果没有自动显示，请复制 Token 粘贴到下方${NC}"
+            echo ""
+
+            # 等 setup-token 完成（用户浏览器授权后）
+            wait $pid 2>/dev/null || true
+
+            # 尝试从输出提取 token
+            local extracted_token=$(grep -oP 'token[:\s]+\K[A-Za-z0-9_\-\.]+' "$tmpout" 2>/dev/null | tail -1)
+            rm -f "$tmpout"
+
+            if [ -n "$extracted_token" ] && [ ${#extracted_token} -gt 20 ]; then
+                OAUTH_TOKEN="$extracted_token"
+                success "Token 已自动获取（${#OAUTH_TOKEN} 字符）"
+            fi
+        else
+            kill $pid 2>/dev/null || true
+            rm -f "$tmpout"
+            warn "未能获取授权链接，请手动粘贴 Token"
+        fi
     fi
 
-    while true; do
-        read -rsp "$(echo -e "${CYAN}粘贴 Token${NC}（输入不可见）: ")" OAUTH_TOKEN
-        echo ""
-        if [ -z "$OAUTH_TOKEN" ]; then
-            warn "Token 不能为空，请重试"
-        else
-            success "Token 已接收（${#OAUTH_TOKEN} 字符）"
-            break
-        fi
-    done
+    # 如果还没拿到 token，手动输入
+    if [ -z "${OAUTH_TOKEN:-}" ]; then
+        while true; do
+            read -rsp "$(echo -e "${CYAN}粘贴 Token${NC}（输入不可见）: ")" OAUTH_TOKEN
+            echo ""
+            if [ -z "$OAUTH_TOKEN" ]; then
+                warn "Token 不能为空，请重试"
+            else
+                success "Token 已接收（${#OAUTH_TOKEN} 字符）"
+                break
+            fi
+        done
+    fi
     echo ""
     echo -e "  ${DIM}1) 每 2 小时（推荐）${NC}"
     echo -e "  ${DIM}2) 每 3 小时${NC}"
