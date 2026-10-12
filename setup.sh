@@ -93,33 +93,32 @@ collect_input() {
     read -rp "$(echo -e "${CYAN}账号标签${NC} [${DIM}${default_label}${NC}]: ")" ACCOUNT_LABEL
     ACCOUNT_LABEL="${ACCOUNT_LABEL:-$default_label}"
     echo ""
-    echo -e "  ${DIM}1) 现场获取 - 开新终端跑命令拿 Token（推荐）${NC}"
-    echo -e "  ${DIM}2) 直接粘贴 - 已经有 Token 了${NC}"
+    echo -e "  ${DIM}1) 已在另一个终端登录好 claude（推荐）${NC}"
+    echo -e "  ${DIM}2) 手动粘贴 Token${NC}"
     read -rp "$(echo -e "${CYAN}认证方式${NC} [${DIM}1${NC}]: ")" auth_method
     echo ""
 
     if [[ "${auth_method:-1}" == "1" ]]; then
-        info "正在启动授权，按提示在浏览器中完成..."
-        echo ""
-
-        # stdin 已经是 /dev/tty，直接前台运行
-        claude setup-token || true
-
-        echo ""
-        echo -e "${DIM}  复制上方显示的 Token 粘贴到下方${NC}"
-        echo ""
-    fi
-
-    while true; do
-        read -rsp "$(echo -e "${CYAN}粘贴 Token${NC}（输入不可见）: ")" OAUTH_TOKEN
-        echo ""
-        if [ -z "$OAUTH_TOKEN" ]; then
-            warn "Token 不能为空，请重试"
+        # 验证 claude 是否已登录
+        info "验证登录状态..."
+        if timeout 30 claude -p "hi" --model claude-opus-5-5 --effort low > /dev/null 2>&1; then
+            success "claude 已登录，认证正常"
+            OAUTH_TOKEN=""
         else
-            success "Token 已接收（${#OAUTH_TOKEN} 字符）"
-            break
+            error "claude 未登录或认证失败，请先在另一个终端运行 claude 完成登录"
         fi
-    done
+    else
+        while true; do
+            read -rsp "$(echo -e "${CYAN}粘贴 Token${NC}（输入不可见）: ")" OAUTH_TOKEN
+            echo ""
+            if [ -z "$OAUTH_TOKEN" ]; then
+                warn "Token 不能为空，请重试"
+            else
+                success "Token 已接收（${#OAUTH_TOKEN} 字符）"
+                break
+            fi
+        done
+    fi
     echo ""
     echo -e "  ${DIM}1) 每 5 分钟（推荐）${NC}"
     echo -e "  ${DIM}2) 每 15 分钟${NC}"
@@ -181,7 +180,9 @@ log "Prompt: $(basename "$PROMPT_FILE")"
 JITTER=$((RANDOM % 300))
 log "Jitter: ${JITTER}s"
 sleep "$JITTER"
-export CLAUDE_CODE_OAUTH_TOKEN
+if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+    export CLAUDE_CODE_OAUTH_TOKEN
+fi
 cd "$PROJECT_DIR"
 if timeout "$TASK_TIMEOUT" claude -p "$PROMPT_CONTENT" --model "$CLAUDE_MODEL" --effort "$CLAUDE_EFFORT" >> "$LOG_FILE" 2>&1; then
     log "Completed successfully"
